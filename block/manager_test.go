@@ -344,3 +344,76 @@ func TestBytesToBatchData(t *testing.T) {
 	assert.Error(err)
 	assert.Contains(err.Error(), "corrupted data")
 }
+
+// TestManager_execValidate tests the execValidate method for various header/data/state conditions.
+func TestManager_execValidate(t *testing.T) {
+	require := require.New(t)
+	genesis, _, _ := types.GetGenesisWithPrivkey("TestChain")
+	m := getManager(t, nil, -1, -1)
+
+	// Helper to create a valid state/header/data triplet
+	makeValid := func() (types.State, *types.SignedHeader, *types.Data) {
+		state := types.State{
+			Version:         types.Version{Block: 1, App: 1},
+			ChainID:         genesis.ChainID,
+			InitialHeight:   genesis.InitialHeight,
+			LastBlockHeight: 1,
+			LastBlockTime:   time.Now().Add(-time.Minute),
+			AppHash:         []byte("apphash"),
+		}
+		newHeight := state.LastBlockHeight + 1
+		// Build header and data
+		header, data, _ := types.GenerateRandomBlockCustomWithAppHash(&types.BlockConfig{Height: newHeight, NTxs: 1}, state.ChainID, state.AppHash)
+		require.NotNil(header)
+		require.NotNil(data)
+		return state, header, data
+	}
+
+	t.Run("valid header and data", func(t *testing.T) {
+		state, header, data := makeValid()
+		err := m.execValidate(state, header, data)
+		require.NoError(err)
+	})
+
+	t.Run("invalid header (ValidateBasic fails)", func(t *testing.T) {
+		state, header, data := makeValid()
+		header.ProposerAddress = []byte("bad") // breaks proposer address check
+		err := m.execValidate(state, header, data)
+		require.ErrorContains(err, "invalid header")
+	})
+
+	t.Run("header/data mismatch (types.Validate fails)", func(t *testing.T) {
+		state, header, data := makeValid()
+		data.Metadata.ChainID = "otherchain" // breaks types.Validate
+		err := m.execValidate(state, header, data)
+		require.ErrorContains(err, "validation failed")
+	})
+
+	t.Run("chain ID mismatch", func(t *testing.T) {
+		state, header, data := makeValid()
+		state.ChainID = "wrongchain"
+		err := m.execValidate(state, header, data)
+		require.ErrorContains(err, "chain ID mismatch")
+	})
+
+	t.Run("height mismatch", func(t *testing.T) {
+		state, header, data := makeValid()
+		state.LastBlockHeight += 2
+		err := m.execValidate(state, header, data)
+		require.ErrorContains(err, "invalid height")
+	})
+
+	t.Run("non-monotonic block time", func(t *testing.T) {
+		state, header, data := makeValid()
+		state.LastBlockTime = time.Now().Add(time.Minute)
+		err := m.execValidate(state, header, data)
+		require.ErrorContains(err, "block time must be strictly increasing")
+	})
+
+	t.Run("app hash mismatch", func(t *testing.T) {
+		state, header, data := makeValid()
+		state.AppHash = []byte("different")
+		err := m.execValidate(state, header, data)
+		require.ErrorContains(err, "app hash mismatch")
+	})
+}
