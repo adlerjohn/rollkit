@@ -729,7 +729,7 @@ func (m *Manager) execValidate(lastState types.State, header *types.SignedHeader
 
 	// Verify that the header's timestamp is strictly greater than the last block's time
 	headerTime := header.Time()
-	if lastState.LastBlockTime.After(headerTime) {
+	if header.Height() > 1 && lastState.LastBlockTime.After(headerTime) {
 		return fmt.Errorf("block time must be strictly increasing: got %v, last block time was %v",
 			headerTime.UnixNano(), lastState.LastBlockTime)
 	}
