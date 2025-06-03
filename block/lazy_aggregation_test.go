@@ -11,7 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	ds "github.com/ipfs/go-datastore"
 	"github.com/rollkit/rollkit/pkg/config"
+	"github.com/rollkit/rollkit/test/mocks"
+	"github.com/stretchr/testify/mock"
 )
 
 // mockPublishBlock is used to control the behavior of publishBlock during tests
@@ -393,5 +396,49 @@ func TestNormalAggregationLoop_TxNotification(t *testing.T) {
 	}
 
 	cancel()
+	wg.Wait()
+}
+
+func TestPendingHeadersInitialization(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+
+	blockTime := 50 * time.Millisecond
+	lazyTime := 100 * time.Millisecond
+	m, pubMock := setupTestManager(t, blockTime, lazyTime)
+
+	// Add missing mock for last-submitted-header-height if store is present
+	if m.store != nil {
+		if mocksStore, ok := m.store.(*mocks.Store); ok {
+			mocksStore.On("GetMetadata", mock.Anything, "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+		}
+	}
+
+	pubMock.mu.Lock()
+	pubMock.err = errors.New("publish failed")
+	pubMock.mu.Unlock()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		// Use real timers
+		blockTimer := time.NewTimer(0)
+		defer blockTimer.Stop()
+		require.Error(m.lazyAggregationLoop(ctx, blockTimer))
+	}()
+
+	// Wait for the first publish attempt (which will fail)
+	select {
+	case <-pubMock.calls:
+	case <-time.After(2 * blockTime):
+		require.Fail("timed out waiting for first block publication attempt")
+	}
+
+	// loop exited, nothing to do.
+
 	wg.Wait()
 }

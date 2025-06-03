@@ -166,17 +166,27 @@ func TestSubmitHeadersToDA_Success(t *testing.T) {
 	da := &mocks.DA{}
 	m := newTestManagerWithDA(t, da)
 	// Prepare a mock PendingHeaders with test data
-	m.pendingHeaders = newPendingBlocks(t)
+	var err error
+	mockStore := mocks.NewStore(t)
+	logger := log.NewNopLogger()
+	mockStore.On("GetMetadata", mock.Anything, "last-submitted-data-height").Return(nil, ds.ErrNotFound).Once()
+	mockStore.On("SetMetadata", mock.Anything, "last-submitted-data-height", mock.Anything).Return(nil).Maybe()
+	mockStore.On("Height", mock.Anything).Return(uint64(0), nil).Once()
+	m.pendingHeaders, err = NewPendingHeaders(mockStore, logger)
+	require.NoError(t, err)
 
 	// Fill the pending headers with mock block data
-	fillWithBlockData(context.Background(), t, m.pendingHeaders, "Test Submitting Headers")
+	fillPendingHeaders(t.Context(), t, m.pendingHeaders, "Test Submitting Headers")
 
 	// Simulate DA layer successfully accepting the header submission
 	da.On("SubmitWithOptions", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 		Return([]coreda.ID{[]byte("id")}, nil)
 
+	headers, err := m.pendingHeaders.getPendingHeaders(t.Context())
+	require.NoError(t, err)
+
 	// Call submitHeadersToDA and expect no error
-	err := m.submitHeadersToDA(context.Background())
+	err = m.submitHeadersToDA(context.Background(), headers)
 	assert.NoError(t, err)
 }
 
@@ -184,8 +194,16 @@ func TestSubmitHeadersToDA_Success(t *testing.T) {
 func TestSubmitHeadersToDA_Failure(t *testing.T) {
 	da := &mocks.DA{}
 	m := newTestManagerWithDA(t, da)
+
+	mockStore := mocks.NewStore(t)
+	logger := log.NewNopLogger()
+	mockStore.On("GetMetadata", mock.Anything, "last-submitted-data-height").Return(nil, ds.ErrNotFound).Once()
+	mockStore.On("Height", mock.Anything).Return(uint64(0), nil).Once()
+
+	var err error
 	// Prepare a mock PendingHeaders with test data
-	m.pendingHeaders = newPendingBlocks(t)
+	m.pendingHeaders, err = NewPendingHeaders(mockStore, logger)
+	require.NoError(t, err)
 
 	// Table-driven test for different DA error scenarios
 	testCases := []struct {
@@ -199,7 +217,7 @@ func TestSubmitHeadersToDA_Failure(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			// Fill the pending headers with mock block data for each subtest
-			fillWithBlockData(context.Background(), t, m.pendingHeaders, "Test Submitting Headers")
+			fillPendingHeaders(t.Context(), t, m.pendingHeaders, "Test Submitting Headers")
 			// Reset mock expectations for each error scenario
 			da.ExpectedCalls = nil
 			// Simulate DA layer returning a specific error
@@ -209,7 +227,9 @@ func TestSubmitHeadersToDA_Failure(t *testing.T) {
 				Return(nil, tc.daError)
 
 			// Call submitHeadersToDA and expect an error
-			err := m.submitHeadersToDA(context.Background())
+			headers, err := m.pendingHeaders.getPendingHeaders(context.Background())
+			require.NoError(t, err)
+			err = m.submitHeadersToDA(context.Background(), headers)
 			assert.Error(t, err, "expected error for DA error: %v", tc.daError)
 			assert.Contains(t, err.Error(), "failed to submit all headers to DA layer")
 

@@ -55,6 +55,9 @@ func getManager(t *testing.T, da da.DA, gasPrice float64, gasMultiplier float64)
 
 	m.publishBlock = m.publishBlockInternal
 
+	// Add missing mock for last-submitted-header-height
+	mockStore.On("GetMetadata", mock.Anything, "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+
 	return m, mockStore
 }
 

@@ -10,6 +10,7 @@ import (
 
 	"cosmossdk.io/log"
 	goheaderstore "github.com/celestiaorg/go-header/store"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -85,6 +86,11 @@ func setupManagerForSyncLoopTest(t *testing.T, initialState types.State) (
 	mockStore.On("Height", mock.Anything).Return(func(context.Context) uint64 {
 		return *heightPtr
 	}, nil).Maybe()
+
+	// Add missing mock for last-submitted-header-height (both with mock.Anything and context.Background())
+	mockStore.On("GetMetadata", mock.Anything, "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+	mockStore.On("GetMetadata", mock.AnythingOfType("context.Context"), "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+	mockStore.On("GetMetadata", t.Context(), "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
 
 	return m, mockStore, mockExec, ctx, cancel, headerInCh, dataInCh, heightPtr
 }

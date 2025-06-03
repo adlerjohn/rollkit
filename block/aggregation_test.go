@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cosmossdk.io/log"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -32,6 +33,7 @@ func TestAggregationLoop_Normal_BasicInterval(t *testing.T) {
 	mockStore := mocks.NewStore(t)
 	mockStore.On("Height", mock.Anything).Return(uint64(1), nil).Maybe()
 	mockStore.On("GetState", mock.Anything).Return(types.State{LastBlockTime: time.Now().Add(-blockTime)}, nil).Maybe()
+	mockStore.On("GetMetadata", mock.Anything, "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
 
 	mockExec := mocks.NewExecutor(t)
 	mockSeq := mocks.NewSequencer(t)
@@ -126,6 +128,7 @@ func TestAggregationLoop_Normal_PublishBlockError(t *testing.T) {
 	mockStore := mocks.NewStore(t)
 	mockStore.On("Height", mock.Anything).Return(uint64(1), nil).Maybe()
 	mockStore.On("GetState", mock.Anything).Return(types.State{LastBlockTime: time.Now().Add(-blockTime)}, nil).Maybe()
+	mockStore.On("GetMetadata", mock.Anything, "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
 
 	mockExec := mocks.NewExecutor(t)
 	mockSeq := mocks.NewSequencer(t)

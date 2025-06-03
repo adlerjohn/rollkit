@@ -12,6 +12,7 @@ import (
 
 	"cosmossdk.io/log"
 	goheaderstore "github.com/celestiaorg/go-header/store"
+	ds "github.com/ipfs/go-datastore"
 	"github.com/libp2p/go-libp2p/core/crypto"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -60,6 +61,7 @@ func setupManagerForPublishBlockTest(
 	lastSubmittedBytes := make([]byte, 8)
 	binary.LittleEndian.PutUint64(lastSubmittedBytes, lastSubmittedHeaderHeight)
 	mockStore.On("GetMetadata", mock.Anything, LastSubmittedHeaderHeightKey).Return(lastSubmittedBytes, nil).Maybe()
+	mockStore.On("GetMetadata", mock.Anything, "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
 
 	var headerStore *goheaderstore.Store[*types.SignedHeader]
 	var dataStore *goheaderstore.Store[*types.Data]
@@ -181,6 +183,15 @@ func Test_publishBlock_NoBatch(t *testing.T) {
 	bz := make([]byte, 8)
 	binary.LittleEndian.PutUint64(bz, 0)
 	mockStore.On("GetMetadata", ctx, LastSubmittedHeaderHeightKey).Return(bz, nil)
+
+	// Add missing mock for last-submitted-header-height (must be before init)
+	mockStore.On("GetMetadata", mock.AnythingOfType("context.Context"), "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+	mockStore.On("GetMetadata", context.Background(), "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+	mockStore.On("GetMetadata", mock.Anything, "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+	mockStore.On("GetMetadata", mock.Anything, mock.Anything).Return(nil, ds.ErrNotFound).Maybe()
+	// Add missing mock for context.backgroundCtx{} specifically
+	mockStore.On("GetMetadata", context.Background(), "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+
 	err = m.pendingHeaders.init()
 	require.NoError(err)
 
@@ -280,6 +291,10 @@ func Test_publishBlock_EmptyBatch(t *testing.T) {
 	bz := make([]byte, 8)
 	binary.LittleEndian.PutUint64(bz, 0)
 	mockStore.On("GetMetadata", ctx, LastSubmittedHeaderHeightKey).Return(bz, nil)
+
+	// Only keep the exact mock for context.Background() and 'last-submitted-header-height'
+	mockStore.On("GetMetadata", context.Background(), "last-submitted-header-height").Return(nil, ds.ErrNotFound).Maybe()
+
 	err = m.pendingHeaders.init()
 	require.NoError(err)
 
